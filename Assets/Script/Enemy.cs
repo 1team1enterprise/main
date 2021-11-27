@@ -1,29 +1,36 @@
-Ôªøusing System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 public class Enemy : MonoBehaviour
 {
-    // Ïª¥Ìè¨ÎÑåÌä∏ Ìï†Îãπ
+    public enum Type { Range, Melee };
+    public Type enemyType;
+
+    // ƒƒ∆˜≥Õ∆Æ «“¥Á
+    public Transform attackPos;
+
+    private Transform attackTarget;
+
     private Rigidbody2D rigid;
 
-    public GameObject enemy_bullet;
-    public Transform player;
-    public Transform firepoint;
-
-    // Î≥ÄÏàò
-    public enum Type { Melee, Range };
-    public Type type;
+    // ∫Øºˆ
+    public int curHealth;
+    public int maxHealth;
 
     public float moveSpeed;
-    public int health;
-    public int meleeDamage;
+
+    public float detectRange;
+
+    public int attackDamage;
+    public int bodyDamage;
     public float attackRange;
+    public float attackRangeLimit;
     public float attackDelay;
 
-    private float timer = 0f;
+    private float attackTimer = 0f;
 
-    // Î≤°ÌÑ∞
+    // ∫§≈Õ
     private Vector2 movement;
 
     void Awake()
@@ -31,53 +38,62 @@ public class Enemy : MonoBehaviour
         rigid = GetComponent<Rigidbody2D>();
     }
 
+    void Start()
+    {
+        curHealth = maxHealth;
+    }
+
     void Update()
     {
-        timer += Time.deltaTime;
+        AI();
+    }
 
-        if (type == Type.Melee)
+    void AI()
+    {
+        StartCoroutine(SearchTarget());
+        Look();
+        if (attackTarget != null)
         {
-            AI_m();
+            attackTimer += Time.deltaTime;
+            if (Vector2.Distance(transform.position, attackTarget.position) >= attackRangeLimit)
+            {
+                Move(movement);
+            }
+            if (enemyType == Type.Range)
+            {
+                if (Vector2.Distance(transform.position, attackTarget.position) <= attackRange)
+                {
+                    if (attackTimer >= attackDelay)
+                    {
+                        RangeAttack();
+                        attackTimer = 0;
+                    }
+                }
+            }
         }
-        else if (type == Type.Range)
+        else
         {
-            AI_r();
+            Move(movement);
         }
     }
 
-    void AI_m()
+    void Look()
     {
-        Vector2 direction = player.position - transform.position;
-        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
-        transform.rotation = Quaternion.Euler(0, 0, angle - 90);
-        direction.Normalize();
-        movement = direction;
-
-        if (Vector2.Distance(transform.position, player.position) > attackRange - 0.2f)
-            Move(movement);
-    }
-
-    void AI_r()
-    {
-        Vector2 direction = player.position - transform.position;
-        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
-        transform.rotation = Quaternion.Euler(0, 0, angle - 90);
-        direction.Normalize();
-        movement = direction;
-
-        if (Vector2.Distance(transform.position, player.position) > (attackRange - 2f))
-            Move(movement);
-        if (Vector2.Distance(transform.position, player.position) <= attackRange)
-            Attack_r();
-            
-    }
-
-    void Attack_r()
-    {
-        if (timer > attackDelay)
+        if (attackTarget != null)
         {
-            Instantiate(enemy_bullet, firepoint.position, firepoint.rotation);
-            timer = 0f;
+            Vector2 direction = attackTarget.position - transform.position;
+            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+            transform.rotation = Quaternion.Euler(0, 0, angle - 90);
+            direction.Normalize();
+            movement = direction;
+        }
+        else
+        {
+            Vector2 direction = new Vector3(0, 0, transform.position.z) - transform.position;
+            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+            transform.rotation = Quaternion.Euler(0, 0, angle - 90);
+            direction.Normalize();
+            movement = direction;
         }
     }
 
@@ -86,24 +102,68 @@ public class Enemy : MonoBehaviour
         rigid.position += direction * moveSpeed * Time.deltaTime;
     }
 
-    void OnHit(int dmg)
+    void RangeAttack()
     {
-        health -= dmg;
+        var bullet = ObjectPooler.SpawnFromPool<Bullet>("Enemy_Bullet", attackPos.position, attackPos.rotation);
+        bullet.dmg = attackDamage;
+        bullet.Shoot();
+    }
 
-        if(health <= 0)
+    void OnDisable()
+    {
+        ObjectPooler.ReturnToPool(gameObject);    // «— ∞¥√ºø° «—π¯∏∏ 
+        CancelInvoke();    // Monobehaviourø° Invoke∞° ¿÷¥Ÿ∏È 
+    }
+
+    public void OnHit(int dmg)
+    {
+        curHealth -= dmg;
+
+        if (curHealth <= 0)
         {
+            EnemySpawner.instance.enemyList.Remove(this);
             gameObject.SetActive(false);
+            attackTarget = null;
+            curHealth = maxHealth;
         }
     }
 
-    void OnTriggerEnter2D(Collider2D other)
+    private IEnumerator SearchTarget()
     {
-        if (other.gameObject.tag == "Player_bullet")
+        while (true)
         {
-            Bullet bullet = other.gameObject.GetComponent<Bullet>();
-            OnHit(bullet.dmg);
+            float closeDisSqr = Mathf.Infinity;
+            for (int i = 0; i < PlayerController.instance.playerList.Count; ++i)
+            {
+                float distance = Vector3.Distance(PlayerController.instance.playerList[i].transform.position, transform.position);
+                if (distance <= detectRange && distance <= closeDisSqr)
+                {
+                    closeDisSqr = distance;
+                    attackTarget = PlayerController.instance.playerList[i].transform;
+                }
+                yield return null;
+            }
+        }
+    }
 
-            other.gameObject.SetActive(false);
+    void OnTriggerStay2D(Collider2D other)
+    {
+        if (other.gameObject.CompareTag("Player"))
+        {
+            PlayerController player = other.gameObject.GetComponent<PlayerController>();
+            if (attackTimer >= attackDelay)
+            {
+                if (enemyType == Type.Melee)
+                {
+                    player.OnHit(attackDamage);
+                    attackTimer = 0;
+                }
+                else if (enemyType == Type.Range)
+                {
+                    player.OnHit(bodyDamage);
+                    attackTimer = 0;
+                }
+            }
         }
     }
 }

@@ -4,8 +4,6 @@
 TagManager:
   serializedVersion: 2
   tags:
-  - Player_bullet
-  - Enemy_bullet
   - Enemy
   layers:
   - Default

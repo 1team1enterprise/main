@@ -1,51 +1,52 @@
-Ôªøusing System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 
 public class PlayerController : MonoBehaviour
 {
-    // Ïª¥Ìè¨ÎÑåÌä∏ Ìï†Îãπ
+    public static PlayerController instance;
+
+    public List<PlayerController> playerList;
+
+    // ƒƒ∆˜≥Õ∆Æ «“¥Á
     private Rigidbody2D myrigid;
 
-    public GameObject player_bullet;
-    public Transform firepoint;
-    public Slider hpbar;
+    public Transform firePos;
 
-    // Î≥ÄÏàò
-    public int health;
-    public int maxhealth;
+    // ∫Øºˆ
+    public int curHealth;
+    public int maxHealth;
+
     public float moveSpeed;
+
+    public int attackDamage;
     public float attackDelay;
-    public float meleeAttackDelay;
 
     private float attackTimer = 0f;
-    private float meleeAttackTimer = 0f;
 
-    // Î≤°ÌÑ∞
+    // ∫§≈Õ
     Vector2 direction;
 
-    private void Awake()
+    void Awake()
     {
+        curHealth = maxHealth;
+        instance = this;
         myrigid = GetComponent<Rigidbody2D>();
-
-        hpbar.value = (float)health / (float)maxhealth;
-    }
-
-    private void Start()
-    {
-        health = maxhealth;
-        HandleHp();
+        playerList.Add(this);
     }
 
     void Update()
     {
         attackTimer += Time.deltaTime;
-        meleeAttackTimer += Time.deltaTime;
-
         Move();
-        Fire();
-        HandleHp();
+        if (Input.GetMouseButtonDown(0) || Input.GetMouseButton(0))
+        {
+            if (attackTimer > attackDelay)
+            {
+                Fire();
+                attackTimer = 0f;
+            }
+        }
     }
 
     void Move()
@@ -55,58 +56,25 @@ public class PlayerController : MonoBehaviour
         float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
         transform.rotation = Quaternion.Euler(0, 0, angle - 90);
 
-        float x = Input.GetAxisRaw("Horizontal");
-        float y = Input.GetAxisRaw("Vertical");
-
-        myrigid.position += new Vector2(x, y) * moveSpeed * Time.deltaTime;
-        // ÎÇòÏ§ëÏúÑÏπò = ÌòÑÏû¨ÏúÑÏπò + Î∞©Ìñ• * ÏÜçÎ†•(ÏÜçÎèÑ * ÏãúÍ∞Ñ)
+        myrigid.velocity = new Vector2(moveSpeed * Input.GetAxisRaw("Horizontal"), moveSpeed * Input.GetAxisRaw("Vertical"));
     }
 
     void Fire()
     {
-        if (Input.GetMouseButtonDown(0) || Input.GetMouseButton(0))
-        {
-            if (attackTimer > attackDelay)
-            {
-                Instantiate(player_bullet, firepoint.position, firepoint.rotation);
-                attackTimer = 0f;
-            }
-        }
+        var bullet = ObjectPooler.SpawnFromPool<Bullet>("Player_Bullet", firePos.position, firePos.rotation);
+        bullet.dmg = attackDamage;
+        bullet.Shoot();
     }
 
-    void OnHit(int dmg)
+    public void OnHit(int dmg)
     {
-        health -= dmg;
-        if (health <= 0)
+        curHealth -= dmg;
+        if (curHealth <= 0)
         {
-            health = 0;
-            hpbar.value = 0;
+            curHealth = 0;
+            playerList.Remove(this);
             gameObject.SetActive(false);
         }
-    }
-
-    void OnTriggerEnter2D(Collider2D other)
-    {
-        if (other.gameObject.tag == "Enemy_bullet")
-        {
-            Bullet bullet = other.gameObject.GetComponent<Bullet>();
-            OnHit(bullet.dmg);
-            other.gameObject.SetActive(false);
-        }
-    }
-
-    void OnTriggerStay2D(Collider2D other)
-    {
-        if (meleeAttackTimer > meleeAttackDelay && other.gameObject.tag == "Enemy")
-        {
-            Enemy enemy = other.gameObject.GetComponent<Enemy>();
-            OnHit(enemy.meleeDamage);
-            meleeAttackTimer = 0;
-        }
-    }
-
-    void HandleHp()
-    {
-        hpbar.value = Mathf.Lerp(hpbar.value, (float)health / (float)maxhealth, Time.deltaTime * 10);
+        UIManager.instance.HandleHp();
     }
 }
